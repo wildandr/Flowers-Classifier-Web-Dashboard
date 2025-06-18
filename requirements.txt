@@ -2,9 +2,10 @@ streamlit
 torch
 torchvision
 timm
-opencv-python
+# Remove opencv-python as it's causing deployment issues
 pillow
 scikit-learn
 matplotlib
 seaborn
 numpy
+scipy

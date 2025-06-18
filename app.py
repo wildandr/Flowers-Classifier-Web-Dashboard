@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import json
 import os
-import cv2
+# Remove OpenCV import and use PIL instead
 import timm
 from PIL import Image
 from sklearn.metrics import confusion_matrix
@@ -181,7 +181,13 @@ def main():
             # Overlay heatmap
             plt.figure(figsize=(10, 5))
             plt.imshow(img_np)
-            plt.imshow(cv2.resize(heatmap, (224, 224)), alpha=0.4, cmap='jet')
+            
+            # Resize heatmap using numpy instead of cv2
+            from scipy.ndimage import zoom
+            zoom_factor = 224.0 / heatmap.shape[0]
+            resized_heatmap = zoom(heatmap, zoom_factor)
+            
+            plt.imshow(resized_heatmap, alpha=0.4, cmap='jet')
             plt.axis('off')
             plt.title(f"Prediction: {class_to_idx[top_classes[0]]}")
             
@@ -304,7 +310,8 @@ def main():
         - **PyTorch**: Deep learning framework
         - **Timm**: PyTorch Image Models for model architecture
         - **Streamlit**: For this interactive dashboard
-        - **OpenCV**: For image processing and visualization
+        - **PIL (Pillow)**: For image processing
+        - **SciPy**: For image resizing and processing
         
         ### Model Performance
         

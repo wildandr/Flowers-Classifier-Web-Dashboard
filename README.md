@@ -24,6 +24,14 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
+## Deployment Notes
+
+The application is designed to run without OpenCV, which can cause issues in some deployment environments. Instead, it uses:
+- PIL (Pillow) for image processing
+- SciPy for image resizing operations
+
+This approach makes the app more compatible with cloud deployment platforms that may have restrictions on system-level dependencies.
+
 ## Model Information
 
 - Architecture: RexNet 150
