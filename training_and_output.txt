@@ -1,0 +1,405 @@
+import os, torch, json, shutil, numpy as np
+from glob import glob; from PIL import Image
+from torch.utils.data import random_split, Dataset, DataLoader
+from torchvision import transforms as T
+torch.manual_seed(2024)
+
+class CustomDataset(Dataset):
+    
+    def __init__(self, root, data, transformations = None):
+        
+        self.transformations = transformations
+        self.im_paths = sorted(glob(f"{root}/flowers/{data}/*/*"))
+        json_data = json.load(open(f"{root}/cat_to_name.json"))
+        self.cls_names = {}
+        
+        for idx, (key, value) in enumerate(json_data.items()): self.cls_names[int(key) - 1] = value
+        
+        self.cls_counts, count = {}, 0
+        for idx, im_path in enumerate(self.im_paths):
+            class_name = self.cls_names[int(self.get_class(im_path)) - 1]
+            if class_name not in self.cls_counts: self.cls_counts[class_name] = 1
+            else: self.cls_counts[class_name] += 1
+        
+    def get_class(self, path): return os.path.basename(os.path.dirname(path))
+    
+    def __len__(self): return len(self.im_paths)
+
+    def __getitem__(self, idx):
+        
+        im_path = self.im_paths[idx]
+        im = Image.open(im_path).convert("RGB")
+        gt = int(self.get_class(im_path)) - 1
+        
+        if self.transformations is not None: im = self.transformations(im)
+        
+        return im, gt
+    
+def get_dls(root, transformations, bs, ns = 4):
+    
+    tr_ds = CustomDataset(root = root, data = "train", transformations = transformations)
+    vl_ds = CustomDataset(root = root, data = "valid", transformations = transformations)
+    ts_ds = CustomDataset(root = root, data = "test",  transformations = transformations)
+    
+    tr_dl, val_dl, ts_dl = DataLoader(tr_ds, batch_size = bs, shuffle = True, num_workers = ns), DataLoader(vl_ds, batch_size = bs, shuffle = False, num_workers = ns), DataLoader(ts_ds, batch_size = 1, shuffle = False, num_workers = ns)
+    
+    return tr_dl, val_dl, ts_dl, tr_ds.cls_names
+
+root = "/kaggle/input/oxford-102-flower-dataset/102 flower"
+mean, std, im_size = [0.485, 0.456, 0.406], [0.229, 0.224, 0.225], 224
+tfs = T.Compose([T.Resize((im_size, im_size)), T.ToTensor(), T.Normalize(mean = mean, std = std)])
+tr_dl, val_dl, ts_dl, classes = get_dls(root = root, transformations = tfs, bs = 32)
+
+print(len(tr_dl)); print(len(val_dl)); print(len(ts_dl)); print(classes)
+205
+26
+819
+{20: 'fire lily', 2: 'canterbury bells', 44: 'bolero deep blue', 0: 'pink primrose', 33: 'mexican aster', 26: 'prince of wales feathers', 6: 'moon orchid', 15: 'globe-flower', 24: 'grape hyacinth', 25: 'corn poppy', 78: 'toad lily', 38: 'siam tulip', 23: 'red ginger', 66: 'spring crocus', 34: 'alpine sea holly', 31: 'garden phlox', 9: 'globe thistle', 5: 'tiger lily', 92: 'ball moss', 32: 'love in the mist', 8: 'monkshood', 101: 'blackberry lily', 13: 'spear thistle', 18: 'balloon flower', 99: 'blanket flower', 12: 'king protea', 48: 'oxeye daisy', 14: 'yellow iris', 60: 'cautleya spicata', 30: 'carnation', 63: 'silverbush', 67: 'bearded iris', 62: 'black-eyed susan', 68: 'windflower', 61: 'japanese anemone', 19: 'giant white arum lily', 37: 'great masterwort', 3: 'sweet pea', 85: 'tree mallow', 100: 'trumpet creeper', 41: 'daffodil', 21: 'pincushion flower', 1: 'hard-leaved pocket orchid', 53: 'sunflower', 65: 'osteospermum', 69: 'tree poppy', 84: 'desert-rose', 98: 'bromelia', 86: 'magnolia', 4: 'english marigold', 91: 'bee balm', 27: 'stemless gentian', 96: 'mallow', 56: 'gaura', 39: 'lenten rose', 46: 'marigold', 58: 'orange dahlia', 47: 'buttercup', 54: 'pelargonium', 35: 'ruby-lipped cattleya', 90: 'hippeastrum', 28: 'artichoke', 70: 'gazania', 89: 'canna lily', 17: 'peruvian lily', 97: 'mexican petunia', 7: 'bird of paradise', 29: 'sweet william', 16: 'purple coneflower', 51: 'wild pansy', 83: 'columbine', 11: "colt's foot", 10: 'snapdragon', 95: 'camellia', 22: 'fritillary', 49: 'common dandelion', 43: 'poinsettia', 52: 'primula', 71: 'azalea', 64: 'californian poppy', 79: 'anthurium', 75: 'morning glory', 36: 'cape flower', 55: 'bishop of llandaff', 59: 'pink-yellow dahlia', 81: 'clematis', 57: 'geranium', 74: 'thorn apple', 40: 'barbeton daisy', 94: 'bougainvillea', 42: 'sword lily', 82: 'hibiscus', 77: 'lotus lotus', 87: 'cyclamen', 93: 'foxglove', 80: 'frangipani', 73: 'rose', 88: 'watercress', 72: 'water lily', 45: 'wallflower', 76: 'passion flower', 50: 'petunia'}
+Exploratory Data Analysis & Data Visualization
+import random
+from matplotlib import pyplot as plt
+
+def tensor_2_im(t, t_type = "rgb"):
+    
+    gray_tfs = T.Compose([T.Normalize(mean = [ 0.], std = [1/0.5]), T.Normalize(mean = [-0.5], std = [1])])
+    rgb_tfs = T.Compose([T.Normalize(mean = [ 0., 0., 0. ], std = [ 1/0.229, 1/0.224, 1/0.225 ]), T.Normalize(mean = [ -0.485, -0.456, -0.406 ], std = [ 1., 1., 1. ])])
+    
+    invTrans = gray_tfs if t_type == "gray" else rgb_tfs 
+    
+    return (invTrans(t) * 255).detach().squeeze().cpu().permute(1,2,0).numpy().astype(np.uint8) if t_type == "gray" else (invTrans(t) * 255).detach().cpu().permute(1,2,0).numpy().astype(np.uint8)
+
+def visualize(data, n_ims, rows, cmap = None, cls_names = None):
+    
+    assert cmap in ["rgb", "gray"], "Rasmni oq-qora yoki rangli ekanini aniqlashtirib bering!"
+    if cmap == "rgb": cmap = "viridis"
+    
+    plt.figure(figsize = (20, 10))
+    indekslar = [random.randint(0, len(data) - 1) for _ in range(n_ims)]
+    for idx, indeks in enumerate(indekslar):
+        
+        im, gt = data[indeks]
+        # Start plot
+        plt.subplot(rows, n_ims // rows, idx + 1)
+        if cmap: plt.imshow(tensor_2_im(im, cmap), cmap=cmap)
+        else: plt.imshow(tensor_2_im(im))
+        plt.axis('off')
+        if cls_names is not None: plt.title(f"GT -> {cls_names[gt]}")
+        else: plt.title(f"GT -> {gt}")
+            
+visualize(tr_dl.dataset, 20, 4, "rgb", list(classes.values()))
+
+visualize(val_dl.dataset, 20, 4, "rgb", list(classes.values()))
+
+visualize(ts_dl.dataset, 20, 4, "rgb", list(classes.values()))
+
+Data Analysis
+def data_analysis(root, data, transformations, text_height = 2, text_width = 1):
+    
+    ds = CustomDataset(root = root, data = data, transformations = transformations)
+    cls_counts, width = ds.cls_counts, 0.7
+    cls_names = list(cls_counts.keys()); counts = list(cls_counts.values())
+    
+    fig, ax = plt.subplots(figsize = (20, 10))
+    indices = np.arange(len(counts))
+
+    ax.bar(indices, counts, width, color = "firebrick")
+    ax.set_xlabel("Class Names", color = "red")
+    ax.set_xticklabels(cls_names, rotation = 90)
+    ax.set(xticks = indices, xticklabels = cls_names)
+    ax.set_ylabel("Data Counts", color = "red")
+    ax.set_title(f"Dataset Class Imbalance Analysis")
+
+    for i, v in enumerate(counts): ax.text(i - text_width, v + text_height, str(v), color = "royalblue")
+    
+data_analysis(root = root, data = "train", transformations = tfs)
+/tmp/ipykernel_34/2397619321.py:12: UserWarning: FixedFormatter should only be used together with FixedLocator
+  ax.set_xticklabels(cls_names, rotation = 90)
+
+data_analysis(root = root, data = "valid", transformations = tfs, text_height = 0.2, text_width = 0.4)
+/tmp/ipykernel_34/2397619321.py:12: UserWarning: FixedFormatter should only be used together with FixedLocator
+  ax.set_xticklabels(cls_names, rotation = 90)
+
+data_analysis(root = root, data = "test", transformations = tfs, text_height = 0.2, text_width = 0.4)
+/tmp/ipykernel_34/2397619321.py:12: UserWarning: FixedFormatter should only be used together with FixedLocator
+  ax.set_xticklabels(cls_names, rotation = 90)
+
+AI Model Train and Validation
+import timm, torchmetrics
+from tqdm import tqdm
+m = timm.create_model("rexnet_150", pretrained = True, num_classes = len(classes))  
+
+def train_setup(m): return m.to("cuda").eval(), 20, "cuda", torch.nn.CrossEntropyLoss(), torch.optim.Adam(params = m.parameters(), lr = 3e-4)
+def to_device(batch, device): return batch[0].to(device), batch[1].to(device)
+def get_metrics(model, ims, gts, loss_fn, epoch_loss, epoch_acc, epoch_f1): preds = model(ims); loss = loss_fn(preds, gts); return loss, epoch_loss + (loss.item()), epoch_acc + (torch.argmax(preds, dim = 1) == gts).sum().item(), epoch_f1 + f1_score(preds, gts)
+
+m, epochs, device, loss_fn, optimizer = train_setup(m)
+
+f1_score = torchmetrics.F1Score(task = "multiclass", num_classes = len(classes)).to(device)
+save_prefix, save_dir = "flowers", "saved_models"
+print("Start training...")
+best_acc, best_loss, threshold, not_improved, patience = 0, float("inf"), 0.01, 0, 5
+tr_losses, val_losses, tr_accs, val_accs, tr_f1s, val_f1s = [], [], [], [], [], []
+
+best_loss = float(torch.inf)
+    
+for epoch in range(epochs):
+
+    epoch_loss, epoch_acc, epoch_f1 = 0, 0, 0
+    for idx, batch in tqdm(enumerate(tr_dl)):
+
+        ims, gts = to_device(batch, device)
+
+        loss, epoch_loss, epoch_acc, epoch_f1 = get_metrics(m, ims, gts, loss_fn, epoch_loss, epoch_acc, epoch_f1)
+        optimizer.zero_grad(); loss.backward(); optimizer.step()
+
+    tr_loss_to_track = epoch_loss / len(tr_dl)
+    tr_acc_to_track  = epoch_acc  / len(tr_dl.dataset)
+    tr_f1_to_track   = epoch_f1   / len(tr_dl)
+    tr_losses.append(tr_loss_to_track); tr_accs.append(tr_acc_to_track); tr_f1s.append(tr_f1_to_track)
+
+    print(f"{epoch + 1}-epoch train process is completed!")
+    print(f"{epoch + 1}-epoch train loss          -> {tr_loss_to_track:.3f}")
+    print(f"{epoch + 1}-epoch train accuracy      -> {tr_acc_to_track:.3f}")
+    print(f"{epoch + 1}-epoch train f1-score      -> {tr_f1_to_track:.3f}")
+
+    m.eval()
+    with torch.no_grad():
+        val_epoch_loss, val_epoch_acc, val_epoch_f1 = 0, 0, 0
+        for idx, batch in enumerate(val_dl):
+            ims, gts = to_device(batch, device)
+            loss, val_epoch_loss, val_epoch_acc, val_epoch_f1 = get_metrics(m, ims, gts, loss_fn, val_epoch_loss, val_epoch_acc, val_epoch_f1)
+
+        val_loss_to_track = val_epoch_loss / len(val_dl)
+        val_acc_to_track  = val_epoch_acc  / len(val_dl.dataset)
+        val_f1_to_track   = val_epoch_f1   / len(val_dl)
+        val_losses.append(val_loss_to_track); val_accs.append(val_acc_to_track); val_f1s.append(val_f1_to_track)
+
+        print(f"{epoch + 1}-epoch validation process is completed!")
+        print(f"{epoch + 1}-epoch validation loss     -> {val_loss_to_track:.3f}")
+        print(f"{epoch + 1}-epoch validation accuracy -> {val_acc_to_track:.3f}")
+        print(f"{epoch + 1}-epoch validation f1-score -> {val_f1_to_track:.3f}")
+
+        if val_loss_to_track < (best_loss + threshold):
+            os.makedirs(save_dir, exist_ok = True)
+            best_loss = val_loss_to_track
+            torch.save(m.state_dict(), f"{save_dir}/{save_prefix}_best_model.pth")
+            
+        else:
+            not_improved += 1
+            print(f"Loss value did not decrease for {not_improved} epochs")
+            if not_improved == patience:
+                print(f"Stop training since loss value did not decrease for {patience} epochs.")
+                break
+model.safetensors:   0%|          | 0.00/39.2M [00:00<?, ?B/s]
+Start training...
+205it [00:33,  6.14it/s]
+1-epoch train process is completed!
+1-epoch train loss          -> 1.544
+1-epoch train accuracy      -> 0.630
+1-epoch train f1-score      -> 0.630
+1-epoch validation process is completed!
+1-epoch validation loss     -> 0.480
+1-epoch validation accuracy -> 0.869
+1-epoch validation f1-score -> 0.870
+205it [00:31,  6.56it/s]
+2-epoch train process is completed!
+2-epoch train loss          -> 0.260
+2-epoch train accuracy      -> 0.925
+2-epoch train f1-score      -> 0.925
+2-epoch validation process is completed!
+2-epoch validation loss     -> 0.329
+2-epoch validation accuracy -> 0.903
+2-epoch validation f1-score -> 0.903
+205it [00:31,  6.54it/s]
+3-epoch train process is completed!
+3-epoch train loss          -> 0.131
+3-epoch train accuracy      -> 0.958
+3-epoch train f1-score      -> 0.958
+3-epoch validation process is completed!
+3-epoch validation loss     -> 0.207
+3-epoch validation accuracy -> 0.943
+3-epoch validation f1-score -> 0.942
+205it [00:31,  6.55it/s]
+4-epoch train process is completed!
+4-epoch train loss          -> 0.057
+4-epoch train accuracy      -> 0.983
+4-epoch train f1-score      -> 0.983
+4-epoch validation process is completed!
+4-epoch validation loss     -> 0.208
+4-epoch validation accuracy -> 0.945
+4-epoch validation f1-score -> 0.945
+205it [00:31,  6.54it/s]
+5-epoch train process is completed!
+5-epoch train loss          -> 0.066
+5-epoch train accuracy      -> 0.981
+5-epoch train f1-score      -> 0.981
+5-epoch validation process is completed!
+5-epoch validation loss     -> 0.252
+5-epoch validation accuracy -> 0.927
+5-epoch validation f1-score -> 0.928
+Loss value did not decrease for 1 epochs
+205it [00:31,  6.55it/s]
+6-epoch train process is completed!
+6-epoch train loss          -> 0.054
+6-epoch train accuracy      -> 0.984
+6-epoch train f1-score      -> 0.984
+6-epoch validation process is completed!
+6-epoch validation loss     -> 0.202
+6-epoch validation accuracy -> 0.939
+6-epoch validation f1-score -> 0.939
+205it [00:31,  6.56it/s]
+7-epoch train process is completed!
+7-epoch train loss          -> 0.068
+7-epoch train accuracy      -> 0.980
+7-epoch train f1-score      -> 0.980
+7-epoch validation process is completed!
+7-epoch validation loss     -> 0.164
+7-epoch validation accuracy -> 0.955
+7-epoch validation f1-score -> 0.956
+205it [00:31,  6.56it/s]
+8-epoch train process is completed!
+8-epoch train loss          -> 0.080
+8-epoch train accuracy      -> 0.978
+8-epoch train f1-score      -> 0.978
+8-epoch validation process is completed!
+8-epoch validation loss     -> 0.243
+8-epoch validation accuracy -> 0.933
+8-epoch validation f1-score -> 0.933
+Loss value did not decrease for 2 epochs
+205it [00:31,  6.56it/s]
+9-epoch train process is completed!
+9-epoch train loss          -> 0.038
+9-epoch train accuracy      -> 0.989
+9-epoch train f1-score      -> 0.989
+9-epoch validation process is completed!
+9-epoch validation loss     -> 0.172
+9-epoch validation accuracy -> 0.965
+9-epoch validation f1-score -> 0.964
+205it [00:31,  6.56it/s]
+10-epoch train process is completed!
+10-epoch train loss          -> 0.041
+10-epoch train accuracy      -> 0.989
+10-epoch train f1-score      -> 0.989
+10-epoch validation process is completed!
+10-epoch validation loss     -> 0.231
+10-epoch validation accuracy -> 0.939
+10-epoch validation f1-score -> 0.940
+Loss value did not decrease for 3 epochs
+205it [00:31,  6.55it/s]
+11-epoch train process is completed!
+11-epoch train loss          -> 0.050
+11-epoch train accuracy      -> 0.985
+11-epoch train f1-score      -> 0.985
+11-epoch validation process is completed!
+11-epoch validation loss     -> 0.247
+11-epoch validation accuracy -> 0.939
+11-epoch validation f1-score -> 0.938
+Loss value did not decrease for 4 epochs
+205it [00:31,  6.55it/s]
+12-epoch train process is completed!
+12-epoch train loss          -> 0.029
+12-epoch train accuracy      -> 0.991
+12-epoch train f1-score      -> 0.991
+12-epoch validation process is completed!
+12-epoch validation loss     -> 0.319
+12-epoch validation accuracy -> 0.918
+12-epoch validation f1-score -> 0.919
+Loss value did not decrease for 5 epochs
+Stop training since loss value did not decrease for 5 epochs.
+Learning Curves
+class PlotLearningCurves:
+    
+    def __init__(self, tr_losses, val_losses, tr_accs, val_accs, tr_f1s, val_f1s):
+        
+        self.tr_losses, self.val_losses, self.tr_accs, self.val_accs, self.tr_f1s, self.val_f1s = tr_losses, val_losses, tr_accs, val_accs, tr_f1s, val_f1s
+        
+    def plot(self, array_1, array_2, label_1, label_2, color_1, color_2):
+        
+        plt.plot(array_1, label = label_1, c = color_1); plt.plot(array_2, label = label_2, c = color_2)
+        
+    def create_figure(self): plt.figure(figsize = (10, 5))
+    
+    def decorate(self, ylabel, xlabel = "Epochs"): 
+        
+        plt.xlabel(xlabel); plt.ylabel(ylabel)
+        plt.xticks(ticks = np.arange(len(self.tr_accs)), labels = [i for i in range(1, len(self.tr_accs) + 1)])
+        plt.legend(); plt.show()      
+        
+    def visualize(self):
+        
+        # Figure 1
+        self.create_figure()
+        self.plot(array_1 = self.tr_losses, array_2 = self.val_losses, label_1 = "Train Loss", label_2 = "Validation Loss", color_1 = "red", color_2 = "blue"); self.decorate(ylabel = "Loss Values")
+        
+        # Figure 2
+        self.create_figure()
+        self.plot(array_1 = self.tr_accs, array_2 = self.val_accs, label_1 = "Train Accuracy", label_2 = "Validation Accuracy", color_1 = "orangered", color_2 = "darkgreen")
+        self.decorate(ylabel = "Accuracy Scores")
+        
+        # Figure 3
+        self.create_figure()
+        self.plot(array_1 = [tr_f1.cpu() for tr_f1 in self.tr_f1s], array_2 = [vl_f1.cpu() for vl_f1 in self.val_f1s], label_1 = "Train F1 Score", label_2 = "Validation F1 Score", color_1 = "blueviolet", color_2 = "crimson"); self.decorate(ylabel = "F1 Scores")
+        
+PlotLearningCurves(tr_losses, val_losses, tr_accs, val_accs, tr_f1s, val_f1s).visualize()
+
+
+
+Inference and AI Model Performance Analysis
+import cv2
+class SaveFeatures():
+    
+    """ Extract pretrained activations"""
+    features = None
+    def __init__(self, m):
+        self.hook = m.register_forward_hook(self.hook_fn)
+    def hook_fn(self, module, input, output):
+        self.features = ((output.cpu()).data).numpy()
+    def remove(self): self.hook.remove()
+
+def getCAM(conv_fs, linear_weights, class_idx):
+    
+    bs, chs, h, w = conv_fs.shape
+    cam = linear_weights[class_idx].dot(conv_fs[0,:, :, ].reshape((chs, h * w)))
+    cam = cam.reshape(h, w)
+    
+    return (cam - np.min(cam)) / np.max(cam)
+
+def inference(model, device, test_dl, num_ims, row, final_conv, fc_params, cls_names = None):
+    
+    weight, acc = np.squeeze(fc_params[0].cpu().data.numpy()), 0
+    activated_features = SaveFeatures(final_conv)
+    preds, images, lbls = [], [], []
+    for idx, batch in tqdm(enumerate(test_dl)):
+        im, gt = to_device(batch, device)
+        pred_class = torch.argmax(model(im), dim = 1)
+        acc += (pred_class == gt).sum().item()
+        images.append(im)
+        preds.append(pred_class.item())
+        lbls.append(gt.item())
+    
+    print(f"Accuracy of the model on the test data -> {(acc / len(test_dl.dataset)):.3f}")
+    
+    plt.figure(figsize = (20, 10))
+    indekslar = [random.randint(0, len(images) - 1) for _ in range(num_ims)]
+    
+    for idx, indeks in enumerate(indekslar):
+        
+        im = images[indeks].squeeze()
+        pred_idx = preds[indeks]
+        heatmap = getCAM(activated_features.features, weight, pred_idx)
+        
+        # Start plot
+        plt.subplot(row, num_ims // row, idx + 1)
+        plt.imshow(tensor_2_im(im), cmap = "gray"); plt.axis("off")
+        plt.imshow(cv2.resize(heatmap, (im_size, im_size), interpolation=cv2.INTER_LINEAR), alpha=0.4, cmap='jet'); plt.axis("off")
+        
+        if cls_names is not None: plt.title(f"GT -> {cls_names[int(lbls[indeks])]} ; PRED -> {cls_names[int(preds[indeks])]}", color=("green" if {cls_names[int(lbls[indeks])]} == {cls_names[int(preds[indeks])]} else "red"))
+        else: plt.title(f"GT -> {gt} ; PRED -> {pred}")
+
+m.load_state_dict(torch.load(f"{save_dir}/{save_prefix}_best_model.pth"))
+m.eval()
+final_conv, fc_params = m.features[-1], list(m.head.fc.parameters())
+inference(model = m.to(device), device = device, test_dl = ts_dl, num_ims = 20, row = 4, cls_names = list(classes.keys()), final_conv = final_conv, fc_params = fc_params)
+819it [00:15, 52.90it/s]
+Accuracy of the model on the test data -> 0.954
+
