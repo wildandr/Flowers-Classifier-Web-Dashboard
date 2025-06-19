@@ -316,8 +316,8 @@ def main():
         ### Model Performance
         
         - **Test Accuracy**: 95.4%
-        - **Validation Accuracy**: 94.3%
-        - **F1-Score**: 0.945
+        - **Validation Accuracy**: 96.5%
+        - **F1-Score**: 0.964
         """)
 
 if __name__ == "__main__":
